@@ -25,6 +25,8 @@ import shutil
 from contextlib import closing
 from io import BytesIO
 
+import snappy
+
 from barman.clients.cloud_cli import create_argument_parser, UrlArgumentType
 from barman.cloud import configure_logging
 from barman.cloud_providers import get_cloud_interface
@@ -138,6 +140,13 @@ def parse_arguments(args=None):
         const="bzip2",
         dest="compression",
     )
+    compression.add_argument(
+        "--snappy",
+        help="snappy-compress the WAL while uploading to the cloud ",
+        action="store_const",
+        const="snappy",
+        dest="compression",
+    )
     s3_arguments.add_argument(
         "-e",
         "--encryption",
@@ -236,6 +245,12 @@ class CloudWalUploader(object):
             in_mem_bz2 = BytesIO(bz2.compress(wal_file.read()))
             in_mem_bz2.seek(0)
             return in_mem_bz2
+
+        elif self.compression == "snappy":
+            in_mem_snappy = BytesIO()
+            snappy.stream_compress(wal_file, in_mem_snappy)
+            in_mem_snappy.seek(0)
+            return in_mem_snappy
         else:
             raise ValueError("Unknown compression type: %s" % self.compression)
 
@@ -264,6 +279,10 @@ class CloudWalUploader(object):
         elif self.compression == "bzip2":
             # add bz2 extension
             return "%s.bz2" % wal_name
+
+        elif self.compression == "snappy":
+            # add snappy extension
+            return "%s.snappy" % wal_name
         else:
             raise ValueError("Unknown compression type: %s" % self.compression)
 

@@ -22,7 +22,9 @@ import logging
 import shutil
 from io import RawIOBase
 
-from barman.cloud import CloudInterface, CloudProviderError
+from barman.cloud import CloudInterface, CloudProviderError, DecompressingStreamingIO
+import snappy
+
 
 try:
     # Python 3.x
@@ -51,6 +53,18 @@ class StreamingBodyIO(RawIOBase):
 
     def read(self, n=-1):
         n = None if n < 0 else n
+        return self.body.read(n)
+
+
+class DecompressingBodyIO(DecompressingStreamingIO, StreamingBodyIO):
+    """
+    A StreamingBodyIO specialisation which decompresses on the fly.
+    """
+
+    def __init__(self, body, decompressor):
+        super(DecompressingBodyIO, self).__init__(body, decompressor)
+
+    def _read_compressed_chunk(self, n):
         return self.body.read(n)
 
 
@@ -246,13 +260,16 @@ class S3CloudInterface(CloudInterface):
                 source_file = gzip.GzipFile(fileobj=remote_file, mode="rb")
             elif decompress == "bzip2":
                 source_file = bz2.BZ2File(remote_file, "rb")
+            elif decompress == "snappy":
+                snappy.stream_decompress(remote_file, dest_file)
+                return
             else:
                 raise ValueError("Unknown compression type: %s" % decompress)
 
             with source_file:
                 shutil.copyfileobj(source_file, dest_file)
 
-    def remote_open(self, key):
+    def remote_open(self, key, decompressor=None):
         """
         Open a remote S3 object and returns a readable stream
 
@@ -262,7 +279,10 @@ class S3CloudInterface(CloudInterface):
         """
         try:
             obj = self.s3.Object(self.bucket_name, key)
-            return StreamingBodyIO(obj.get()["Body"])
+            if decompressor:
+                return DecompressingBodyIO(obj.get()["Body"], decompressor)
+            else:
+                return StreamingBodyIO(obj.get()["Body"])
         except ClientError as exc:
             error_code = exc.response["Error"]["Code"]
             if error_code == "NoSuchKey":

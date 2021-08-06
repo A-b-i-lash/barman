@@ -23,7 +23,9 @@ import os
 import shutil
 from io import BytesIO, RawIOBase
 
-from barman.cloud import CloudInterface, CloudProviderError
+import snappy
+
+from barman.cloud import CloudInterface, CloudProviderError, DecompressingStreamingIO
 
 try:
     # Python 3.x
@@ -88,6 +90,24 @@ class StreamingBlobIO(RawIOBase):
         except StopIteration:
             pass
         return blob_bytes
+
+
+class DecompressingBlobIO(DecompressingStreamingIO, StreamingBlobIO):
+    def __init__(self, body, decompressor):
+        super(DecompressingBlobIO, self).__init__(body, decompressor)
+
+    def _read_compressed_chunk(self, n):
+        compressed_bytes = self._current_chunk.read(n)
+        try:
+            bytes_read = len(compressed_bytes)
+            while bytes_read < n:
+                self._current_chunk = BytesIO(self._chunks.next())
+                new_bytes = self._current_chunk.read(n - bytes_read)
+                bytes_read += len(new_bytes)
+                compressed_bytes += new_bytes
+        except StopIteration:
+            pass
+        return compressed_bytes
 
 
 class AzureCloudInterface(CloudInterface):
@@ -286,10 +306,13 @@ class AzureCloudInterface(CloudInterface):
                 source_file = gzip.GzipFile(fileobj=blob, mode="rb")
             elif decompress == "bzip2":
                 source_file = bz2.BZ2File(blob, "rb")
+            elif decompress == "snappy":
+                snappy.stream_decompress(blob, dest_file)
+                return
             with source_file:
                 shutil.copyfileobj(source_file, dest_file)
 
-    def remote_open(self, key):
+    def remote_open(self, key, decompressor=None):
         """
         Open a remote Azure Blob Storage object and return a readable stream
 
@@ -299,7 +322,10 @@ class AzureCloudInterface(CloudInterface):
         """
         try:
             obj = self.container_client.download_blob(key)
-            return StreamingBlobIO(obj)
+            if decompressor:
+                return DecompressingBlobIO(obj, decompressor)
+            else:
+                return StreamingBlobIO(obj)
         except ResourceNotFoundError:
             return None
 
