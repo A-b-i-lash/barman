@@ -97,6 +97,7 @@ setup(
     extras_require={
         "cloud": ["boto3"],
         "azure": ["azure-identity", "azure-storage-blob"],
+        "google": ["google-cloud-storage"],
     },
     platforms=["Linux", "Mac OS X"],
     classifiers=[
