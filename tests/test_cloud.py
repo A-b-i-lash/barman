@@ -18,6 +18,7 @@
 
 import datetime
 import os
+import sys
 from io import BytesIO
 from azure.core.exceptions import ResourceNotFoundError, ServiceRequestError
 from azure.storage.blob import PartialBatchErrorException
@@ -1365,7 +1366,9 @@ class TestGoogleCloudInterface(TestCase):
         container_path = "path/to/dir"
         account_url = "console.cloud.google.com"
         cloud_interface = GoogleCloudInterface(
-            url=f"https://{account_url}/storage/browser/{container_name}/{container_path}"
+            url="https://{}/storage/browser/{}/{}".format(
+                account_url, container_name, container_path
+            )
         )
 
         assert cloud_interface.bucket_name == "barman-test"
@@ -1411,10 +1414,12 @@ class TestGoogleCloudInterface(TestCase):
     #         == "A connection string must be provided when using emulated storage"
     #     )
 
-    @mock.patch.dict(
-        os.environ, {"AZURE_STORAGE_CONNECTION_STRING": "connection_string"}
+    @pytest.mark.skipif(
+        sys.version_info < (3, 5), reason="requires python3.6 or higher"
     )
-    def test_uploader_malformed_urls(self):
+    def test_uploader_malformed_urls(
+        self,
+    ):
         tests = {
             "wrong domain": {
                 "url": "https://unexpected.domain/storage/browser/container",
@@ -1482,24 +1487,25 @@ class TestGoogleCloudInterface(TestCase):
         container_client_mock = blob_service_client_mock.bucket.return_value
         container_client_mock.exists.assert_called_once_with()
 
-    # @mock.patch.dict(
-    #     os.environ, {"AZURE_STORAGE_CONNECTION_STRING": "connection_string"}
-    # )
     @mock.patch("barman.cloud_providers.google_cloud_storage.storage.Client")
     def test_setup_bucket_create(self, blob_service_mock):
         """
         Test auto-creation of a bucket if it not exists
         """
+        container_client_mock = mock.Mock()
+        container_client_mock.exists.return_value = False
+
+        blob_service_client_mock = blob_service_mock.return_value
+        blob_service_client_mock.bucket.return_value = container_client_mock
+
         cloud_interface = GoogleCloudInterface(
             "https://console.cloud.google.com/storage/browser/barman-testss/test/path/to/my/"
         )
-        blob_service_client_mock = blob_service_mock.return_value
-        container_client_mock = blob_service_client_mock.bucket.return_value
-        container_client_mock.exists.return_value = False
         cloud_interface.setup_bucket()
         container_client_mock.exists.assert_called_once_with()
-        # Todo
-        # container_client_mock.client.create_bucket.assert_called_once_with()
+        container_client_mock.client.create_bucket.assert_called_once_with(
+            container_client_mock
+        )
 
     # @mock.patch.dict(
     #     os.environ, {"AZURE_STORAGE_CONNECTION_STRING": "connection_string"}

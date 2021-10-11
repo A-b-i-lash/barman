@@ -43,7 +43,7 @@ URL = "https://console.cloud.google.com/storage/browser"
 
 
 class GoogleCloudInterface(CloudInterface):
-    # Azure block blob limitations
+    # Todo: find google limitations
     # https://docs.microsoft.com/en-us/rest/api/storageservices/understanding-block-blobs--append-blobs--and-page-blobs
     MAX_CHUNKS_PER_FILE = 50000
     # Minimum block size allowed in Azure Blob Storage is 64KB
@@ -70,14 +70,18 @@ class GoogleCloudInterface(CloudInterface):
 
         parsed_url = urlparse(url)
         if not url.startswith(URL):
-            msg = f"google cloud storage URL {url} is malformed. Should start with '{URL}'"
+            msg = "google cloud storage URL {} is malformed. Should start with '{}'".format(
+                url, URL
+            )
             raise ValueError(msg)
         self.account_url = parsed_url.netloc
         try:
             self.bucket_name = parsed_url.path.split("/")[3]
         except IndexError:
             raise ValueError(
-                f"Google cloud storage URL {url} is malformed. Bucket name not found"
+                "Google cloud storage URL {} is malformed. Bucket name not found".format(
+                    url
+                )
             )
         path = parsed_url.path.split("/")[4:]
         self.path = "/".join(path)
