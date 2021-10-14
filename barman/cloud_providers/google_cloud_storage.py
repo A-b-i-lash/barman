@@ -23,7 +23,7 @@ import os
 import shutil
 from io import BytesIO, RawIOBase
 
-from barman.cloud import CloudInterface
+from barman.cloud import CloudInterface, DEFAULT_DELIMITER
 
 try:
     # Python 3.x
@@ -61,6 +61,7 @@ class GoogleCloudInterface(CloudInterface):
         :param str url: Full URL of the cloud destination/source (ex: )
         :param int jobs: How many sub-processes to use for asynchronous
           uploading, defaults to 2.
+        :param str encryption_scope: Todo: Not sure we need this unless user wants to use its own encryption key
         """
         super(GoogleCloudInterface, self).__init__(
             url=url,
@@ -95,7 +96,8 @@ class GoogleCloudInterface(CloudInterface):
         Creates a client using "GOOGLE_APPLICATION_CREDENTIALS" env
         """
         # os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = '/Users/didier.michel/Downloads/barman-324718-e759c283753d.json'
-        self.container_client = storage.Client().bucket(self.bucket_name)
+        self.client = storage.Client()
+        self.container_client = self.client.bucket(self.bucket_name)
 
     def test_connectivity(self):
         """
@@ -132,12 +134,9 @@ class GoogleCloudInterface(CloudInterface):
         #  * access control
         #  Detailed documentation: https://googleapis.dev/python/storage/latest/client.html
         # Might be relevant to use configuration file for those parameters.
-        self.container_client = self.container_client.client.create_bucket(
-            self.container_client
-        )
+        self.client.create_bucket(self.container_client)
 
-    # @abstractmethod
-    def list_bucket(self, prefix="", delimiter="/"):
+    def list_bucket(self, prefix="", delimiter=DEFAULT_DELIMITER):
         """
         List bucket content in a directory manner
 
@@ -146,7 +145,12 @@ class GoogleCloudInterface(CloudInterface):
         :return: List of objects and dirs right under the prefix
         :rtype: List[str]
         """
-        pass
+        blobs = self.client.list_blobs(
+            self.container_client, prefix=prefix, delimiter=delimiter
+        )
+        objects = list(map(lambda blob: blob.name, blobs))
+        dirs = list(blobs.prefixes)
+        return objects + dirs
 
     # @abstractmethod
     def download_file(self, key, dest_path, decompress):
@@ -170,7 +174,6 @@ class GoogleCloudInterface(CloudInterface):
         """
         pass
 
-    # @abstractmethod
     def upload_fileobj(self, fileobj, key):
         """
         Synchronously upload the content of a file-like object to a cloud key
@@ -178,7 +181,9 @@ class GoogleCloudInterface(CloudInterface):
         :param fileobj IOBase: File-like object to upload
         :param str key: The key to identify the uploaded object
         """
-        pass
+        print("upload_fileobj", fileobj)
+        blob = self.container_client.blob(key)
+        blob.upload_from_file(fileobj)
 
     # @abstractmethod
     def create_multipart_upload(self, key):

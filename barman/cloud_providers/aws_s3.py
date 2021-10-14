@@ -22,7 +22,7 @@ import logging
 import shutil
 from io import RawIOBase
 
-from barman.cloud import CloudInterface, CloudProviderError
+from barman.cloud import CloudInterface, CloudProviderError, DEFAULT_DELIMITER
 
 try:
     # Python 3.x
@@ -195,7 +195,7 @@ class S3CloudInterface(CloudInterface):
             }
         self.s3.Bucket(self.bucket_name).create(**create_bucket_config)
 
-    def list_bucket(self, prefix="", delimiter="/"):
+    def list_bucket(self, prefix="", delimiter=DEFAULT_DELIMITER):
         """
         List bucket content in a directory manner
 

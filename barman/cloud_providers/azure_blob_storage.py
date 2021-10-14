@@ -23,7 +23,7 @@ import os
 import shutil
 from io import BytesIO, RawIOBase
 
-from barman.cloud import CloudInterface, CloudProviderError
+from barman.cloud import CloudInterface, CloudProviderError, DEFAULT_DELIMITER
 
 try:
     # Python 3.x
@@ -249,7 +249,7 @@ class AzureCloudInterface(CloudInterface):
                 for v in self._walk_blob_tree(child):
                     yield v
 
-    def list_bucket(self, prefix="", delimiter="/"):
+    def list_bucket(self, prefix="", delimiter=DEFAULT_DELIMITER):
         """
         List bucket content in a directory manner
 

@@ -31,7 +31,12 @@ from boto3.exceptions import Boto3Error
 from botocore.exceptions import ClientError, EndpointConnectionError
 
 from barman.annotations import KeepManager
-from barman.cloud import CloudBackupCatalog, CloudUploadingError, FileUploadStatistics
+from barman.cloud import (
+    CloudBackupCatalog,
+    CloudUploadingError,
+    FileUploadStatistics,
+    DEFAULT_DELIMITER,
+)
 from barman.cloud_providers.aws_s3 import S3CloudInterface
 from barman.cloud_providers.azure_blob_storage import AzureCloudInterface
 from barman.cloud import CloudProviderError
@@ -1448,7 +1453,7 @@ class TestGoogleCloudInterface(TestCase):
 
     @mock.patch.dict(os.environ, {"GOOGLE_APPLICATION_CREDENTIALS": "credentials_path"})
     @mock.patch("barman.cloud_providers.google_cloud_storage.storage.Client")
-    def test_connectivity(self, blob_service_mock):
+    def test_connectivity(self, gcs_client_mock):
         """
         Test the test_connectivity method
         """
@@ -1456,26 +1461,26 @@ class TestGoogleCloudInterface(TestCase):
             "https://console.cloud.google.com/storage/browser/barman-test/test"
         )
         assert cloud_interface.test_connectivity() is True
-        blob_service_client_mock = blob_service_mock.return_value
-        container_client_mock = blob_service_client_mock.bucket.return_value
+        service_client_mock = gcs_client_mock.return_value
+        container_client_mock = service_client_mock.bucket.return_value
         container_client_mock.exists.assert_called_once_with()
 
     @mock.patch.dict(os.environ, {"GOOGLE_APPLICATION_CREDENTIALS": "credentials_path"})
     @mock.patch("barman.cloud_providers.google_cloud_storage.storage.Client")
-    def test_connectivity_failure(self, blob_service_mock):
+    def test_connectivity_failure(self, gcs_client_mock):
         """
         Test the test_connectivity method in case of failure
         """
         cloud_interface = GoogleCloudInterface(
             "https://console.cloud.google.com/storage/browser/bucket/path/some/blob"
         )
-        blob_service_client_mock = blob_service_mock.return_value
-        container_client_mock = blob_service_client_mock.bucket.return_value
+        service_client_mock = gcs_client_mock.return_value
+        container_client_mock = service_client_mock.bucket.return_value
         container_client_mock.exists.side_effect = GoogleAPIError("error")
         assert cloud_interface.test_connectivity() is False
 
     @mock.patch("barman.cloud_providers.google_cloud_storage.storage.Client")
-    def test_setup_bucket(self, blob_service_mock):
+    def test_setup_bucket(self, gcs_client_mock):
         """
         Test if a bucket already exists
         """
@@ -1483,72 +1488,134 @@ class TestGoogleCloudInterface(TestCase):
             "https://console.cloud.google.com/storage/browser/barman-test/test/path/to/dir"
         )
         cloud_interface.setup_bucket()
-        blob_service_client_mock = blob_service_mock.return_value
-        container_client_mock = blob_service_client_mock.bucket.return_value
+        service_client_mock = gcs_client_mock.return_value
+        container_client_mock = service_client_mock.bucket.return_value
         container_client_mock.exists.assert_called_once_with()
 
     @mock.patch("barman.cloud_providers.google_cloud_storage.storage.Client")
-    def test_setup_bucket_create(self, blob_service_mock):
+    def test_setup_bucket_create(self, gcs_client_mock):
         """
         Test auto-creation of a bucket if it not exists
         """
         container_client_mock = mock.Mock()
         container_client_mock.exists.return_value = False
 
-        blob_service_client_mock = blob_service_mock.return_value
-        blob_service_client_mock.bucket.return_value = container_client_mock
+        service_client_mock = gcs_client_mock.return_value
+        service_client_mock.bucket.return_value = container_client_mock
 
         cloud_interface = GoogleCloudInterface(
             "https://console.cloud.google.com/storage/browser/barman-testss/test/path/to/my/"
         )
         cloud_interface.setup_bucket()
         container_client_mock.exists.assert_called_once_with()
-        container_client_mock.client.create_bucket.assert_called_once_with(
+        service_client_mock.create_bucket.assert_called_once_with(
             container_client_mock
         )
 
-    # @mock.patch.dict(
-    #     os.environ, {"AZURE_STORAGE_CONNECTION_STRING": "connection_string"}
-    # )
-    # @mock.patch("barman.cloud_providers.azure_blob_storage.BlobServiceClient")
-    # def test_upload_fileobj(self, blob_service_mock):
-    #     """Test container client upload_blob is called with expected args"""
-    #     cloud_interface = AzureCloudInterface(
-    #         "https://storageaccount.blob.core.windows.net/container/path/to/blob"
-    #     )
-    #     blob_service_client_mock = blob_service_mock.from_connection_string.return_value
-    #     container_client_mock = (
-    #         blob_service_client_mock.get_container_client.return_value
-    #     )
-    #     mock_fileobj = mock.MagicMock()
-    #     mock_key = "path/to/blob"
-    #     cloud_interface.upload_fileobj(mock_fileobj, mock_key)
-    #     # The key and fileobj are passed on to the upload_blob call
-    #     container_client_mock.upload_blob.assert_called_once_with(
-    #         name=mock_key, data=mock_fileobj, overwrite=True
-    #     )
+    @pytest.mark.skipif(
+        sys.version_info < (3, 5), reason="requires python3.6 or higher"
+    )
+    @mock.patch("barman.cloud_providers.google_cloud_storage.storage.Client")
+    def test_list_bucket(self, gcs_client_mock):
+        test_cases = {
+            "default_delimiter": {
+                "prefix": "test/path/to",
+                "delimiter": None,
+                "blob_files": ["path/to/some-file", "path/to/some-other-file"],
+                "blob_dirs": ["path/to/dir/", "path/to/dir2/"],
+                "expected": [
+                    "path/to/some-file",
+                    "path/to/some-other-file",
+                    "path/to/dir/",
+                    "path/to/dir2/",
+                ],
+            },
+            "no_delimiter": {
+                "prefix": "test/path/to",
+                "delimiter": "",
+                "blob_files": [
+                    "path/to/some-file",
+                    "path/to/some-other-file",
+                    "path/to/dir/f1",
+                    "path/to/dir2/f2",
+                ],
+                "blob_dirs": [],
+                "expected": [
+                    "path/to/some-file",
+                    "path/to/some-other-file",
+                    "path/to/dir/f1",
+                    "path/to/dir2/f2",
+                ],
+            },
+        }
+        for test_name, test_case in test_cases.items():
+            with self.subTest(msg=test_name, delimiter=test_case["delimiter"]):
+                # Simulate blobs client response object
+                blobs = MagicMock()
+                blobs.__iter__.return_value = list(
+                    map(
+                        lambda file: type("", (), {"name": file}),
+                        test_case["blob_files"],
+                    )
+                )
+                blobs.prefixes = test_case["blob_dirs"]
+
+                service_client_mock = gcs_client_mock.return_value
+                service_client_mock.list_blobs.return_value = blobs
+                # set delimiter value
+                delimiter = (
+                    test_case["delimiter"]
+                    if test_case["delimiter"]
+                    else DEFAULT_DELIMITER
+                )
+                # Create object and call list_bucket
+                cloud_interface = GoogleCloudInterface(
+                    "https://console.cloud.google.com/storage/browser/barman-tests/path/to/somewhere"
+                )
+                content = cloud_interface.list_bucket(
+                    test_case["prefix"], delimiter=delimiter
+                )
+                assert content == test_case["expected"]
+
+    @mock.patch("barman.cloud_providers.google_cloud_storage.storage.Client")
+    def test_upload_fileobj(self, gcs_client_mock):
+        """Test container client upload_blob is called with expected args"""
+        mock_fileobj = mock.MagicMock()
+        mock_key = "path/to/blob"
+
+        mock_blob = mock.MagicMock()
+
+        service_client_mock = gcs_client_mock.return_value
+        container_client_mock = service_client_mock.bucket.return_value
+        container_client_mock.blob.return_value = mock_blob
+        # Create Object and call upload_filobj
+        cloud_interface = GoogleCloudInterface(
+            "https://console.cloud.google.com/storage/browser/barman-test/test/path/to/my/"
+        )
+        cloud_interface.upload_fileobj(mock_fileobj, mock_key)
+
+        # Validate behavior
+        container_client_mock.blob.assert_called_once_with(mock_key)
+        mock_blob.upload_from_file.assert_called_once_with(mock_fileobj)
 
     # @mock.patch.dict(
     #     os.environ, {"AZURE_STORAGE_CONNECTION_STRING": "connection_string"}
     # )
-    # @mock.patch("barman.cloud_providers.azure_blob_storage.BlobServiceClient")
-    # def test_upload_fileobj_with_encryption_scope(self, blob_service_mock):
+    # @mock.patch("barman.cloud_providers.azure_blob_storage.ContainerClient")
+    # def test_upload_fileobj_with_encryption_scope(self, ContainerClientMock):
     #     """Test encrption scope is passed to upload_blob"""
     #     encryption_scope = "test_encryption_scope"
     #     cloud_interface = AzureCloudInterface(
     #         "https://storageaccount.blob.core.windows.net/container/path/to/blob",
     #         encryption_scope=encryption_scope,
     #     )
-    #     blob_service_client_mock = blob_service_mock.from_connection_string.return_value
-    #     container_client_mock = (
-    #         blob_service_client_mock.get_container_client.return_value
-    #     )
+    #     container_client = ContainerClientMock.from_connection_string.return_value
     #     mock_fileobj = mock.MagicMock()
     #     mock_key = "path/to/blob"
     #     cloud_interface.upload_fileobj(mock_fileobj, mock_key)
     #     # The key and fileobj are passed on to the upload_blob call along
     #     # with the encryption_scope
-    #     container_client_mock.upload_blob.assert_called_once_with(
+    #     container_client.upload_blob.assert_called_once_with(
     #         name=mock_key,
     #         data=mock_fileobj,
     #         overwrite=True,
