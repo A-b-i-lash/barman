@@ -198,7 +198,7 @@ def parse_arguments(args=None):
         description="This script can be used to perform a backup "
         "of a local PostgreSQL instance and ship "
         "the resulting tarball(s) to the Cloud. "
-        "Currently AWS S3 and Azure Blob Storage are supported.",
+        "Currently AWS S3, Azure Blob Storage and Google Cloud Storage are supported.",
         add_help=False,
     )
     parser.add_argument(
@@ -291,7 +291,7 @@ def parse_arguments(args=None):
     parser.add_argument(
         "--cloud-provider",
         help="The cloud provider to use as a storage backend",
-        choices=["aws-s3", "azure-blob-storage"],
+        choices=["aws-s3", "azure-blob-storage", "google-cloud-storage"],
         default="aws-s3",
     )
     s3_arguments = parser.add_argument_group(

@@ -19,9 +19,10 @@
 
 def get_cloud_interface(config):
     """
-    Create a CloudInterface for the specified cloud_provider
+    Factory function that creates CloudInterface for the specified cloud_provider
 
-    :returns: A CloudInterface for the specified cloud_provider
+    :param: argparse.Namespace config
+    :return: A CloudInterface for the specified cloud_provider
     :rtype: CloudInterface
     """
     cloud_interface_kwargs = {
@@ -49,3 +50,8 @@ def get_cloud_interface(config):
         if "encryption_scope" in config:
             cloud_interface_kwargs["encryption_scope"] = config.encryption_scope
         return AzureCloudInterface(**cloud_interface_kwargs)
+    elif config.cloud_provider == "google-cloud-storage":
+        from barman.cloud_providers.google_cloud_storage import GoogleCloudInterface
+
+        # todo: check if there is something to do with encryption
+        return GoogleCloudInterface(**cloud_interface_kwargs)

@@ -1508,9 +1508,7 @@ class TestGoogleCloudInterface(TestCase):
         )
         cloud_interface.setup_bucket()
         container_client_mock.exists.assert_called_once_with()
-        service_client_mock.create_bucket.assert_called_once_with(
-            container_client_mock
-        )
+        service_client_mock.create_bucket.assert_called_once_with(container_client_mock)
 
     @pytest.mark.skipif(
         sys.version_info < (3, 5), reason="requires python3.6 or higher"

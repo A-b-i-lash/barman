@@ -82,7 +82,7 @@ def parse_arguments(args=None):
         description="This script can be used as a `restore_command` "
         "to download WAL files previously archived with "
         "barman-cloud-wal-archive command. "
-        "Currently AWS S3 and Azure Blob Storage are supported.",
+        "Currently AWS S3, Azure Blob Storage and Google Cloud Storage are supported.",
         add_help=False,
     )
 
@@ -131,7 +131,7 @@ def parse_arguments(args=None):
     parser.add_argument(
         "--cloud-provider",
         help="The cloud provider to use as a storage backend",
-        choices=["aws-s3", "azure-blob-storage"],
+        choices=["aws-s3", "azure-blob-storage", "google-cloud-storage"],
         default="aws-s3",
     )
     s3_arguments = parser.add_argument_group(
