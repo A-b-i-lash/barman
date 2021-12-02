@@ -57,7 +57,7 @@ class GoogleCloudInterface(CloudInterface):
     # MAX_ARCHIVE_SIZE - so we set a maximum of 1TB per file
     MAX_ARCHIVE_SIZE = 1 << 40
 
-    def __init__(self, url, jobs=1, encryption_scope=None,  profile_name=None):
+    def __init__(self, url, jobs=1, encryption_scope=None, profile_name=None):
         """
         Create a new Google cloud Storage interface given the supplied account url
 
@@ -88,7 +88,7 @@ class GoogleCloudInterface(CloudInterface):
             msg = "Google cloud storage URL {} is malformed. Expected format are '{}' or '{}'".format(
                 url,
                 os.path.join(BASE_URL, "bucket-name/some/path"),
-                "gs://bucket-name/some/path"
+                "gs://bucket-name/some/path",
             )
             raise ValueError(msg)
         gs_url = url.replace(BASE_URL, "gs://")
@@ -195,7 +195,7 @@ class GoogleCloudInterface(CloudInterface):
             logging.debug("Key: {} does not exist".format(key))
             return None
         # todo: maybe open with rb ?
-        return blob.open('r')
+        return blob.open("r")
 
     def upload_fileobj(self, fileobj, key):
         """
@@ -214,7 +214,6 @@ class GoogleCloudInterface(CloudInterface):
             logging.error(e.__dict__)
             logging.error(e.with_traceback())
             raise e
-
 
     # @abstractmethod
     def create_multipart_upload(self, key):
@@ -326,5 +325,5 @@ class GoogleCloudInterface(CloudInterface):
                 failures[path] = e
 
         if failures:
-            raise RuntimeError('blabla')
+            raise RuntimeError("blabla")
         pass

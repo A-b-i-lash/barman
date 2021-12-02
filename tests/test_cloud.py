@@ -1371,13 +1371,13 @@ class TestGoogleCloudInterface(TestCase):
             "https_url": {
                 "url": "https://console.cloud.google.com/storage/browser/some-bucket/useful/path",
                 "expected-path": "useful/path",
-                "expected-bucket-name": "some-bucket"
+                "expected-bucket-name": "some-bucket",
             },
             "gs_url": {
                 "url": "gs://some-bucket/useful/path",
                 "expected-path": "useful/path",
-                "expected-bucket-name": "some-bucket"
-            }
+                "expected-bucket-name": "some-bucket",
+            },
         }
 
         for test_name, test in tests.items():
@@ -1432,24 +1432,32 @@ class TestGoogleCloudInterface(TestCase):
     def test_uploader_malformed_urls(
         self,
     ):
-        error_string = "Google cloud storage URL {} is malformed. Expected format are " \
-                       "'https://console.cloud.google.com/storage/browser/bucket-name/some/path' " \
-                       "or 'gs://bucket-name/some/path'"
+        error_string = (
+            "Google cloud storage URL {} is malformed. Expected format are "
+            "'https://console.cloud.google.com/storage/browser/bucket-name/some/path' "
+            "or 'gs://bucket-name/some/path'"
+        )
         tests = {
             "wrong domain": {
                 "url": "https://unexpected.domain/storage/browser/container",
                 "error": ValueError,
-                "message": error_string.format("https://unexpected.domain/storage/browser/container"),
+                "message": error_string.format(
+                    "https://unexpected.domain/storage/browser/container"
+                ),
             },
             "wrong base path": {
                 "url": "https://console.cloud.google.com/storage/container",
                 "error": ValueError,
-                "message": error_string.format("https://console.cloud.google.com/storage/container"),
+                "message": error_string.format(
+                    "https://console.cloud.google.com/storage/container"
+                ),
             },
             "missing bucket": {
                 "url": "https://console.cloud.google.com/storage/browser",
                 "error": ValueError,
-                "message": error_string.format("https://console.cloud.google.com/storage/browser"),
+                "message": error_string.format(
+                    "https://console.cloud.google.com/storage/browser"
+                ),
             },
             "missing bucket bis": {
                 "url": "https://console.cloud.google.com/storage/browser/",
@@ -1461,7 +1469,7 @@ class TestGoogleCloudInterface(TestCase):
                 "url": "gs://",
                 "error": ValueError,
                 "message": "Google cloud storage URL gs:// is malformed. Bucket name not found",
-            }
+            },
         }
         for test_name, test in tests.items():
             with self.subTest(test_name):
