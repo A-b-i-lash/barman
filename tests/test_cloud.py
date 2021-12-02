@@ -1367,18 +1367,25 @@ class TestGoogleCloudInterface(TestCase):
     @mock.patch("barman.cloud_providers.google_cloud_storage.storage.Client")
     def test_uploader_default_credential_auth(self, gcs_client_mock):
         """Uses DefaultCredential if no other auth provided"""
-        container_name = "barman-test"
-        container_path = "path/to/dir"
-        account_url = "console.cloud.google.com"
-        cloud_interface = GoogleCloudInterface(
-            url="https://{}/storage/browser/{}/{}".format(
-                account_url, container_name, container_path
-            )
-        )
+        tests = {
+            "https_url": {
+                "url": "https://console.cloud.google.com/storage/browser/some-bucket/useful/path",
+                "expected-path": "useful/path",
+                "expected-bucket-name": "some-bucket"
+            },
+            "gs_url": {
+                "url": "gs://some-bucket/useful/path",
+                "expected-path": "useful/path",
+                "expected-bucket-name": "some-bucket"
+            }
+        }
 
-        assert cloud_interface.bucket_name == "barman-test"
-        assert cloud_interface.path == "path/to/dir"
-        gcs_client_mock.assert_called_once()
+        for test_name, test in tests.items():
+            with self.subTest(test_name):
+                cloud_interface = GoogleCloudInterface(test["url"])
+                assert cloud_interface.bucket_name == test["expected-bucket-name"]
+                assert cloud_interface.path == test["expected-path"]
+        self.assertEqual(gcs_client_mock.call_count, 2)
 
     # @mock.patch.dict(
     #     os.environ,
@@ -1425,25 +1432,36 @@ class TestGoogleCloudInterface(TestCase):
     def test_uploader_malformed_urls(
         self,
     ):
+        error_string = "Google cloud storage URL {} is malformed. Expected format are " \
+                       "'https://console.cloud.google.com/storage/browser/bucket-name/some/path' " \
+                       "or 'gs://bucket-name/some/path'"
         tests = {
             "wrong domain": {
                 "url": "https://unexpected.domain/storage/browser/container",
                 "error": ValueError,
-                "message": "google cloud storage URL https://unexpected.domain/storage/browser/container is malformed. "
-                "Should start with 'https://console.cloud.google.com/storage/browser'",
+                "message": error_string.format("https://unexpected.domain/storage/browser/container"),
             },
             "wrong base path": {
                 "url": "https://console.cloud.google.com/storage/container",
                 "error": ValueError,
-                "message": "google cloud storage URL https://console.cloud.google.com/storage/container is malformed. "
-                "Should start with 'https://console.cloud.google.com/storage/browser'",
+                "message": error_string.format("https://console.cloud.google.com/storage/container"),
             },
             "missing bucket": {
                 "url": "https://console.cloud.google.com/storage/browser",
                 "error": ValueError,
-                "message": "Google cloud storage URL https://console.cloud.google.com/storage/browser is malformed. "
+                "message": error_string.format("https://console.cloud.google.com/storage/browser"),
+            },
+            "missing bucket bis": {
+                "url": "https://console.cloud.google.com/storage/browser/",
+                "error": ValueError,
+                "message": "Google cloud storage URL https://console.cloud.google.com/storage/browser/ is malformed. "
                 "Bucket name not found",
             },
+            "missing bucket ter": {
+                "url": "gs://",
+                "error": ValueError,
+                "message": "Google cloud storage URL gs:// is malformed. Bucket name not found",
+            }
         }
         for test_name, test in tests.items():
             with self.subTest(test_name):
@@ -1628,7 +1646,7 @@ class TestGoogleCloudInterface(TestCase):
     #     """
     #     Tests the upload of a single block in Azure
     #     """
-    #     cloud_interface = AzureCloudInterface(
+    #     cloud_interface = GoogleCloudInterface(
     #         "https://storageaccount.blob.core.windows.net/container/path/to/blob"
     #     )
     #     blob_service_client_mock = blob_service_mock.from_connection_string.return_value
@@ -1684,7 +1702,7 @@ class TestGoogleCloudInterface(TestCase):
     # @mock.patch("barman.cloud_providers.azure_blob_storage.BlobServiceClient")
     # def test_complete_multipart_upload(self, blob_service_mock):
     #     """Tests completion of a block blob upload in Azure Blob Storage"""
-    #     cloud_interface = AzureCloudInterface(
+    #     cloud_interface = GoogleCloudInterface(
     #         "https://storageaccount.blob.core.windows.net/container/path/to/blob"
     #     )
     #     blob_service_client_mock = blob_service_mock.from_connection_string.return_value
