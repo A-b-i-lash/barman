@@ -16,14 +16,12 @@
 # You should have received a copy of the GNU General Public License
 # along with Barman.  If not, see <http://www.gnu.org/licenses/>
 
-import bz2
-import gzip
 import logging
 import shutil
 from io import RawIOBase
 
+from barman.clients.cloud_compression import decompress_to_file
 from barman.cloud import CloudInterface, CloudProviderError, DecompressingStreamingIO
-import snappy
 
 
 try:
@@ -256,18 +254,7 @@ class S3CloudInterface(CloudInterface):
                 shutil.copyfileobj(remote_file, dest_file)
                 return
 
-            if decompress == "gzip":
-                source_file = gzip.GzipFile(fileobj=remote_file, mode="rb")
-            elif decompress == "bzip2":
-                source_file = bz2.BZ2File(remote_file, "rb")
-            elif decompress == "snappy":
-                snappy.stream_decompress(remote_file, dest_file)
-                return
-            else:
-                raise ValueError("Unknown compression type: %s" % decompress)
-
-            with source_file:
-                shutil.copyfileobj(source_file, dest_file)
+            decompress_to_file(remote_file, dest_file, decompress)
 
     def remote_open(self, key, decompressor=None):
         """

@@ -27,7 +27,6 @@ import operator
 import os
 import shutil
 import signal
-import snappy
 import tarfile
 from abc import ABCMeta, abstractmethod, abstractproperty
 from functools import partial
@@ -36,6 +35,7 @@ from tempfile import NamedTemporaryFile
 
 from barman.annotations import KeepManagerMixinCloud
 from barman.backup_executor import ConcurrentBackupStrategy, ExclusiveBackupStrategy
+from barman.clients import cloud_compression
 from barman.exceptions import BarmanException
 from barman.fs import path_allowed
 from barman.infofile import BackupInfo
@@ -181,11 +181,8 @@ class CloudTarUploader(object):
         self.counter = 0
         self.do_snappy = False
         self.compressor = None
-        if compression == "snappy":
-            self.compressor = snappy.StreamCompressor()
-            tar_mode = "w|"
-        else:
-            tar_mode = "w|%s" % (compression or "")
+        self.compressor = cloud_compression.get_compressor(compression)
+        tar_mode = cloud_compression.get_streaming_tar_mode("w", compression)
         self.tar = TarFileIgnoringTruncate.open(
             fileobj=self, mode=tar_mode, bufsize=64 << 10
         )
@@ -937,12 +934,8 @@ class CloudInterface(with_metaclass(ABCMeta)):
         """
         extension = os.path.splitext(key)[-1]
         compression = "" if extension == ".tar" else extension[1:]
-        if compression == "snappy":
-            tar_mode = "r|"
-            fileobj = self.remote_open(key, snappy.StreamDecompressor())
-        else:
-            tar_mode = "r|%s" % compression
-            fileobj = self.remote_open(key)
+        tar_mode = cloud_compression.get_streaming_tar_mode("r", compression)
+        fileobj = self.remote_open(key, cloud_compression.get_decompressor(compression))
         with tarfile.open(fileobj=fileobj, mode=tar_mode) as tf:
             tf.extractall(path=dst)
 

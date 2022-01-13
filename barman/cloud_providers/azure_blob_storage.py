@@ -16,15 +16,11 @@
 # You should have received a copy of the GNU General Public License
 # along with Barman.  If not, see <http://www.gnu.org/licenses/>
 
-import bz2
-import gzip
 import logging
 import os
-import shutil
 from io import BytesIO, RawIOBase
 
-import snappy
-
+from barman.clients.cloud_compression import decompress_to_file
 from barman.cloud import CloudInterface, CloudProviderError, DecompressingStreamingIO
 
 try:
@@ -302,15 +298,7 @@ class AzureCloudInterface(CloudInterface):
                 obj.download_to_stream(dest_file)
                 return
             blob = StreamingBlobIO(obj)
-            if decompress == "gzip":
-                source_file = gzip.GzipFile(fileobj=blob, mode="rb")
-            elif decompress == "bzip2":
-                source_file = bz2.BZ2File(blob, "rb")
-            elif decompress == "snappy":
-                snappy.stream_decompress(blob, dest_file)
-                return
-            with source_file:
-                shutil.copyfileobj(source_file, dest_file)
+            decompress_to_file(blob, dest_file, decompress)
 
     def remote_open(self, key, decompressor=None):
         """

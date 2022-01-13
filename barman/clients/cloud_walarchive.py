@@ -25,10 +25,9 @@ import shutil
 from contextlib import closing
 from io import BytesIO
 
-import snappy
-
 from barman.clients.cloud_cli import create_argument_parser, UrlArgumentType
 from barman.cloud import configure_logging
+from barman.cloud_compression import compress
 from barman.cloud_providers import get_cloud_interface
 from barman.exceptions import BarmanException
 from barman.utils import force_str
@@ -247,10 +246,7 @@ class CloudWalUploader(object):
             return in_mem_bz2
 
         elif self.compression == "snappy":
-            in_mem_snappy = BytesIO()
-            snappy.stream_compress(wal_file, in_mem_snappy)
-            in_mem_snappy.seek(0)
-            return in_mem_snappy
+            return compress(wal_file, "snappy")
         else:
             raise ValueError("Unknown compression type: %s" % self.compression)
 
