@@ -41,6 +41,21 @@ def compress(wal_file, compression):
         snappy.stream_compress(wal_file, in_mem_snappy)
         in_mem_snappy.seek(0)
         return in_mem_snappy
+    elif compression == "gzip":
+        # Create a BytesIO for in memory compression
+        in_mem_gzip = BytesIO()
+        with gzip.GzipFile(fileobj=in_mem_gzip, mode="wb") as gz:
+            # copy the gzipped data in memory
+            shutil.copyfileobj(wal_file, gz)
+        in_mem_gzip.seek(0)
+        return in_mem_gzip
+    elif compression == "bzip2":
+        # Create a BytesIO for in memory compression
+        in_mem_bz2 = BytesIO(bz2.compress(wal_file.read()))
+        in_mem_bz2.seek(0)
+        return in_mem_bz2
+    else:
+        raise ValueError("Unknown compression type: %s" % compression)
 
 
 def get_streaming_tar_mode(mode, compression):

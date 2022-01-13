@@ -27,7 +27,7 @@ from io import BytesIO
 
 from barman.clients.cloud_cli import create_argument_parser, UrlArgumentType
 from barman.cloud import configure_logging
-from barman.cloud_compression import compress
+from barman.clients.cloud_compression import compress
 from barman.cloud_providers import get_cloud_interface
 from barman.exceptions import BarmanException
 from barman.utils import force_str
@@ -229,26 +229,7 @@ class CloudWalUploader(object):
         if not self.compression:
             return wal_file
 
-        if self.compression == "gzip":
-            # Create a BytesIO for in memory compression
-            in_mem_gzip = BytesIO()
-            # TODO: closing is redundant with python >= 2.7
-            with closing(gzip.GzipFile(fileobj=in_mem_gzip, mode="wb")) as gz:
-                # copy the gzipped data in memory
-                shutil.copyfileobj(wal_file, gz)
-            in_mem_gzip.seek(0)
-            return in_mem_gzip
-
-        elif self.compression == "bzip2":
-            # Create a BytesIO for in memory compression
-            in_mem_bz2 = BytesIO(bz2.compress(wal_file.read()))
-            in_mem_bz2.seek(0)
-            return in_mem_bz2
-
-        elif self.compression == "snappy":
-            return compress(wal_file, "snappy")
-        else:
-            raise ValueError("Unknown compression type: %s" % self.compression)
+        return compress(wal_file, "snappy")
 
     def retrieve_wal_name(self, wal_path):
         """
