@@ -16,14 +16,10 @@
 # You should have received a copy of the GNU General Public License
 # along with Barman.  If not, see <http://www.gnu.org/licenses/>.
 
-import bz2
-import gzip
 import logging
 import os
 import os.path
-import shutil
 from contextlib import closing
-from io import BytesIO
 
 from barman.clients.cloud_cli import create_argument_parser, UrlArgumentType
 from barman.cloud import configure_logging
@@ -229,7 +225,7 @@ class CloudWalUploader(object):
         if not self.compression:
             return wal_file
 
-        return compress(wal_file, "snappy")
+        return compress(wal_file, self.compression)
 
     def retrieve_wal_name(self, wal_path):
         """
