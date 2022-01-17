@@ -35,6 +35,7 @@ from tempfile import NamedTemporaryFile
 
 from barman.annotations import KeepManagerMixinCloud
 from barman.backup_executor import ConcurrentBackupStrategy, ExclusiveBackupStrategy
+from barman.clients import cloud_compression
 from barman.exceptions import BarmanException
 from barman.fs import path_allowed
 from barman.infofile import BackupInfo
@@ -61,7 +62,7 @@ BUFSIZE = 16 * 1024
 LOGGING_FORMAT = "%(asctime)s [%(process)s] %(levelname)s: %(message)s"
 
 # Allowed compression algorithms
-ALLOWED_COMPRESSIONS = {".gz": "gzip", ".bz2": "bzip2"}
+ALLOWED_COMPRESSIONS = {".gz": "gzip", ".bz2": "bzip2", ".snappy": "snappy"}
 
 
 def configure_logging(config):
@@ -178,8 +179,13 @@ class CloudTarUploader(object):
             self.chunk_size = max(chunk_size, cloud_interface.MIN_CHUNK_SIZE)
         self.buffer = None
         self.counter = 0
-        tar_mode = "w|%s" % (compression or "")
-        self.tar = TarFileIgnoringTruncate.open(fileobj=self, mode=tar_mode)
+        self.do_snappy = False
+        self.compressor = None
+        self.compressor = cloud_compression.get_compressor(compression)
+        tar_mode = cloud_compression.get_streaming_tar_mode("w", compression)
+        self.tar = TarFileIgnoringTruncate.open(
+            fileobj=self, mode=tar_mode, bufsize=64 << 10
+        )
         self.size = 0
         self.stats = None
 
@@ -188,7 +194,10 @@ class CloudTarUploader(object):
             self.flush()
         if not self.buffer:
             self.buffer = self._buffer()
-        self.buffer.write(buf)
+        if self.compressor:
+            self.buffer.write(self.compressor.add_chunk(buf))
+        else:
+            self.buffer.write(buf)
         self.size += len(buf)
 
     def flush(self):
@@ -275,6 +284,8 @@ class CloudUploadController(object):
             components.append(".gz")
         elif self.compression == "bz2":
             components.append(".bz2")
+        elif self.compression == "snappy":
+            components.append(".snappy")
         return "".join(components)
 
     def _get_tar(self, name):
@@ -471,6 +482,55 @@ class FileUploadStatistics(dict):
     def set_part_start_time(self, part_number, start_time):
         part = self["parts"].setdefault(part_number, {"part_number": part_number})
         part["start_time"] = start_time
+
+
+class DecompressingStreamingIO(with_metaclass(ABCMeta)):
+    """
+    Mixin which adds decompression to a StreamingIO object.
+
+    This is intended to be included with the StreamingIO object used to wrap a
+    streaming response from a cloud provider.
+
+    Implementing classes must add their own _read_compressed_chunk method which
+    must return n compressed bytes from the streaming response.
+    """
+
+    def __init__(self, streaming_response, decompressor):
+        super(DecompressingStreamingIO, self).__init__(streaming_response)
+        self.decompressor = decompressor
+        self.buffer = bytearray()
+        self.compressed_chunk_size = 65535
+
+    def _read_from_uncompressed_buffer(self, n):
+        if n <= len(self.buffer):
+            return_bytes = self.buffer[:n]
+            self.buffer = self.buffer[n:]
+            return return_bytes
+        else:
+            return_bytes = self.buffer
+            self.buffer = []
+            return return_bytes
+
+    @abstractmethod
+    def _read_compressed_chunk(self, n):
+        """Read n bytes from the cloud provider response."""
+
+    def read(self, n=-1):
+        n = None if n < 0 else n
+        uncompressed_bytes = self._read_from_uncompressed_buffer(n)
+        if len(uncompressed_bytes) == n:
+            return uncompressed_bytes
+
+        while len(uncompressed_bytes) < n:
+            compressed_bytes = self._read_compressed_chunk(self.compressed_chunk_size)
+            uncompressed_bytes += self.decompressor.decompress(compressed_bytes)
+            if len(compressed_bytes) < self.compressed_chunk_size:
+                # If we got fewer bytes than we asked for then we're done
+                break
+
+        return_bytes = uncompressed_bytes[:n]
+        self.buffer = uncompressed_bytes[n:]
+        return return_bytes
 
 
 class CloudInterface(with_metaclass(ABCMeta)):
@@ -877,8 +937,8 @@ class CloudInterface(with_metaclass(ABCMeta)):
         """
         extension = os.path.splitext(key)[-1]
         compression = "" if extension == ".tar" else extension[1:]
-        tar_mode = "r|%s" % compression
-        fileobj = self.remote_open(key)
+        tar_mode = cloud_compression.get_streaming_tar_mode("r", compression)
+        fileobj = self.remote_open(key, cloud_compression.get_decompressor(compression))
         with tarfile.open(fileobj=fileobj, mode=tar_mode) as tf:
             tf.extractall(path=dst)
 
@@ -1666,6 +1726,8 @@ class CloudBackupCatalog(KeepManagerMixinCloud):
                         info.compression = "gzip"
                     elif ext == "tar.bz2":
                         info.compression = "bzip2"
+                    elif ext == "tar.snappy":
+                        info.compression = "snappy"
                     else:
                         logging.warning("Skipping unknown extension: %s", ext)
                         continue
