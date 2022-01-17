@@ -41,8 +41,9 @@ def compress(wal_file, compression):
     """
     Compresses the supplied wal_file and returns a file-like object containing the
     compressed data.
-    Called when uploading WALs only (by retrieve_file_obj).
-    :param fileobj IOBase:
+    :param IOBase wal_file: A file-like object containing the WAL file data.
+    :param str compression: The compression algorithm to apply. Can be one of:
+      bzip2, gzip, snappy.
     """
     if compression == "snappy":
         snappy = _try_import_snappy()
@@ -69,8 +70,14 @@ def compress(wal_file, compression):
 
 def get_streaming_tar_mode(mode, compression):
     """
-    Compression can be gz, bz2 or snappy.
-    Called when doing a streaming upload or download as part of cloud backup.
+    Helper function used in streaming uploads and downloads which appends the supplied
+    compression to the raw filemode (either r or w) and returns the result. Any
+    compression algorithms supported by barman-cloud but not Python TarFile are
+    ignored so that barman-cloud can apply them itself.
+
+    :param str mode: The file mode to use, either r or w.
+    :param str compression: The compression algorithm to use. Can be set to snappy
+     or any compression supported by the TarFile mode string.
     """
     if compression == "snappy" or compression is None:
         return "%s|" % mode
@@ -80,8 +87,12 @@ def get_streaming_tar_mode(mode, compression):
 
 def get_decompressor(compression):
     """
-    Compression can be gz, bz2 or snappy.
-    Called when downloading a backup.
+    Helper function which returns a streaming decompressor for the specified
+    compression algorithm. Currently only snappy is supported. Other compression
+    algorithms use the decompression built into TarFile.
+
+    :param str compression: The compression algorithm to use. Can be set to snappy
+     or any compression supported by the TarFile mode string.
     """
     if compression == "snappy":
         snappy = _try_import_snappy()
@@ -91,8 +102,12 @@ def get_decompressor(compression):
 
 def get_compressor(compression):
     """
-    Compression can be gz, bz2 or snappy.
-    Called when uploading a backup.
+    Helper function which returns a streaming compressor for the specified
+    compression algorithm. Currently only snappy is supported. Other compression
+    algorithms use the decompression built into TarFile.
+
+    :param str compression: The compression algorithm to use. Can be set to snappy
+     or any compression supported by the TarFile mode string.
     """
     if compression == "snappy":
         snappy = _try_import_snappy()
@@ -102,8 +117,14 @@ def get_compressor(compression):
 
 def decompress_to_file(blob, dest_file, compression):
     """
-    Here compression is gzip, bzip2 or snappy.
-    Called when downloading WALs only.
+    Decompresses the supplied blob of data into the dest_file file-like object using
+    the specified compression.
+
+    :param IOBase blob: A file-like object containing the compressed data.
+    :param IOBase dest_file: A file-like object into which the uncompressed data
+      should be written.
+    :param str compression: The compression algorithm to apply. Can be one of:
+      bzip2, gzip, snappy.
     """
     if compression == "snappy":
         snappy = _try_import_snappy()

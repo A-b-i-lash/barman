@@ -179,10 +179,16 @@ class CloudTarUploader(object):
             self.chunk_size = max(chunk_size, cloud_interface.MIN_CHUNK_SIZE)
         self.buffer = None
         self.counter = 0
-        self.do_snappy = False
         self.compressor = None
+        # Some supported compressions (e.g. snappy) require CloudTarUploader to apply
+        # compression manually rather than relying on the tar file.
         self.compressor = cloud_compression.get_compressor(compression)
+        # If the compression is supported by tar then it will be added to the filemode
+        # passed to tar_mode.
         tar_mode = cloud_compression.get_streaming_tar_mode("w", compression)
+        # The value of 65536 for the chunk size is based on comments in the python-snappy
+        # library which suggest it should be good for almost every scenario.
+        # See: https://github.com/andrix/python-snappy/blob/0.6.0/snappy/snappy.py#L282
         self.tar = TarFileIgnoringTruncate.open(
             fileobj=self, mode=tar_mode, bufsize=64 << 10
         )
@@ -195,8 +201,12 @@ class CloudTarUploader(object):
         if not self.buffer:
             self.buffer = self._buffer()
         if self.compressor:
+            # If we have a custom compressor we must use it here.
             self.buffer.write(self.compressor.add_chunk(buf))
         else:
+            # If there is no custom compressor then we are either not using
+            # compression or tar will compress it for us. In either case we just
+            # write the data to the buffer.
             self.buffer.write(buf)
         self.size += len(buf)
 
@@ -493,13 +503,18 @@ class DecompressingStreamingIO(with_metaclass(ABCMeta)):
 
     Implementing classes must add their own _read_compressed_chunk method which
     must return n compressed bytes from the streaming response.
+
     """
+
+    # The value of 65536 for the chunk size is based on comments in the python-snappy
+    # library which suggest it should be good for almost every scenario.
+    # See: https://github.com/andrix/python-snappy/blob/0.6.0/snappy/snappy.py#L300
+    COMPRESSED_CHUNK_SIZE = 65536
 
     def __init__(self, streaming_response, decompressor):
         super(DecompressingStreamingIO, self).__init__(streaming_response)
         self.decompressor = decompressor
         self.buffer = bytearray()
-        self.compressed_chunk_size = 65535
 
     def _read_from_uncompressed_buffer(self, n):
         if n <= len(self.buffer):
@@ -522,9 +537,9 @@ class DecompressingStreamingIO(with_metaclass(ABCMeta)):
             return uncompressed_bytes
 
         while len(uncompressed_bytes) < n:
-            compressed_bytes = self._read_compressed_chunk(self.compressed_chunk_size)
+            compressed_bytes = self._read_compressed_chunk(self.COMPRESSED_CHUNK_SIZE)
             uncompressed_bytes += self.decompressor.decompress(compressed_bytes)
-            if len(compressed_bytes) < self.compressed_chunk_size:
+            if len(compressed_bytes) < self.COMPRESSED_CHUNK_SIZE:
                 # If we got fewer bytes than we asked for then we're done
                 break
 
@@ -997,7 +1012,7 @@ class CloudInterface(with_metaclass(ABCMeta)):
         """
 
     @abstractmethod
-    def remote_open(self, key):
+    def remote_open(self, key, decompressor=None):
         """
         Open a remote object in cloud storage and returns a readable stream
 
