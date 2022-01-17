@@ -89,24 +89,6 @@ class StreamingBlobIO(RawIOBase):
         return blob_bytes
 
 
-class DecompressingBlobIO(DecompressingStreamingIO, StreamingBlobIO):
-    def __init__(self, body, decompressor):
-        super(DecompressingBlobIO, self).__init__(body, decompressor)
-
-    def _read_compressed_chunk(self, n):
-        compressed_bytes = self._current_chunk.read(n)
-        try:
-            bytes_read = len(compressed_bytes)
-            while bytes_read < n:
-                self._current_chunk = BytesIO(self._chunks.next())
-                new_bytes = self._current_chunk.read(n - bytes_read)
-                bytes_read += len(new_bytes)
-                compressed_bytes += new_bytes
-        except StopIteration:
-            pass
-        return compressed_bytes
-
-
 class AzureCloudInterface(CloudInterface):
     # Azure block blob limitations
     # https://docs.microsoft.com/en-us/rest/api/storageservices/understanding-block-blobs--append-blobs--and-page-blobs
@@ -351,10 +333,11 @@ class AzureCloudInterface(CloudInterface):
         """
         try:
             obj = self.container_client.download_blob(key)
+            resp = StreamingBlobIO(obj)
             if decompressor:
-                return DecompressingBlobIO(obj, decompressor)
+                return DecompressingStreamingIO(resp, decompressor)
             else:
-                return StreamingBlobIO(obj)
+                return resp
         except ResourceNotFoundError:
             return None
 

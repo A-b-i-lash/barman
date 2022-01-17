@@ -55,18 +55,6 @@ class StreamingBodyIO(RawIOBase):
         return self.body.read(n)
 
 
-class DecompressingBodyIO(DecompressingStreamingIO, StreamingBodyIO):
-    """
-    A StreamingBodyIO specialisation which decompresses on the fly.
-    """
-
-    def __init__(self, body, decompressor):
-        super(DecompressingBodyIO, self).__init__(body, decompressor)
-
-    def _read_compressed_chunk(self, n):
-        return self.body.read(n)
-
-
 class S3CloudInterface(CloudInterface):
     # S3 multipart upload limitations
     # http://docs.aws.amazon.com/AmazonS3/latest/API/mpUploadUploadPart.html
@@ -274,10 +262,11 @@ class S3CloudInterface(CloudInterface):
         """
         try:
             obj = self.s3.Object(self.bucket_name, key)
+            resp = StreamingBodyIO(obj.get()["Body"])
             if decompressor:
-                return DecompressingBodyIO(obj.get()["Body"], decompressor)
+                return DecompressingStreamingIO(resp, decompressor)
             else:
-                return StreamingBodyIO(obj.get()["Body"])
+                return resp
         except ClientError as exc:
             error_code = exc.response["Error"]["Code"]
             if error_code == "NoSuchKey":

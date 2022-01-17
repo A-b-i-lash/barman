@@ -30,7 +30,7 @@ import signal
 import tarfile
 from abc import ABCMeta, abstractmethod, abstractproperty
 from functools import partial
-from io import BytesIO
+from io import BytesIO, RawIOBase
 from tempfile import NamedTemporaryFile
 
 from barman.annotations import KeepManagerMixinCloud
@@ -494,7 +494,7 @@ class FileUploadStatistics(dict):
         part["start_time"] = start_time
 
 
-class DecompressingStreamingIO(with_metaclass(ABCMeta)):
+class DecompressingStreamingIO(RawIOBase):
     """
     Mixin which adds decompression to a StreamingIO object.
 
@@ -512,7 +512,7 @@ class DecompressingStreamingIO(with_metaclass(ABCMeta)):
     COMPRESSED_CHUNK_SIZE = 65536
 
     def __init__(self, streaming_response, decompressor):
-        super(DecompressingStreamingIO, self).__init__(streaming_response)
+        self.streaming_response = streaming_response
         self.decompressor = decompressor
         self.buffer = bytearray()
 
@@ -526,10 +526,6 @@ class DecompressingStreamingIO(with_metaclass(ABCMeta)):
             self.buffer = []
             return return_bytes
 
-    @abstractmethod
-    def _read_compressed_chunk(self, n):
-        """Read n bytes from the cloud provider response."""
-
     def read(self, n=-1):
         n = None if n < 0 else n
         uncompressed_bytes = self._read_from_uncompressed_buffer(n)
@@ -537,7 +533,7 @@ class DecompressingStreamingIO(with_metaclass(ABCMeta)):
             return uncompressed_bytes
 
         while len(uncompressed_bytes) < n:
-            compressed_bytes = self._read_compressed_chunk(self.COMPRESSED_CHUNK_SIZE)
+            compressed_bytes = self.streaming_response.read(self.COMPRESSED_CHUNK_SIZE)
             uncompressed_bytes += self.decompressor.decompress(compressed_bytes)
             if len(compressed_bytes) < self.COMPRESSED_CHUNK_SIZE:
                 # If we got fewer bytes than we asked for then we're done
